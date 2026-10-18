@@ -251,7 +251,7 @@ var CONFIG = {
   LIFF_ID: '2012068636-aOhJtokE',
   API_URL: 'https://script.google.com/macros/s/AKfycbxQHn_tqa_MHr_WDMBLG2DsRVzu63E6pOlHQGhJ7kiE7sKKLOqt1ZF1vgpZ4MSfc9cb5A/exec',
   // 注文後に LINE グループへメッセージを送るか（Bot を対応させてから true にする）
-  SEND_CHAT_MESSAGE: false
+  SEND_CHAT_MESSAGE: true
 };
 // =================================================
 
@@ -301,6 +301,14 @@ function overlay(on, text) {
 }
 
 function closeForm() {
+  // グループへのお知らせを送信中なら、送り終わってから閉じる（最大 3 秒）
+  if (state.chatSending) {
+    var pending = state.chatSending;
+    state.chatSending = null;
+    var timer = new Promise(function (r) { setTimeout(r, 3000); });
+    Promise.race([pending, timer]).then(closeForm, closeForm);
+    return;
+  }
   try {
     if (!state.demo && window.liff && liff.isInClient()) { liff.closeWindow(); return; }
   } catch (e) {}
@@ -640,7 +648,7 @@ function submitOrder() {
     if (res && res.ok) {
       state.lastOrder = { items: items, shipping: shipping };
       renderDone(res);
-      sendChatMessage(items, shipping);
+      sendChatMessage(items, shipping, res.receivedAt);
       return;
     }
 
@@ -674,14 +682,19 @@ function renderDone(res) {
 }
 
 // 注文後に LINE グループへお知らせを送る（CONFIG.SEND_CHAT_MESSAGE が true のときだけ）
-function sendChatMessage(items, shipping) {
+// お客様ご本人のメッセージとして送られる（LINE の送信数にはカウントされない）。
+// 「受付：」の時刻を手がかりに、LINE Bot が受注依頼からこの注文を探して内容を返信する。
+function sendChatMessage(items, shipping, receivedAt) {
   if (state.demo || !CONFIG.SEND_CHAT_MESSAGE) return;
   try {
     var ctx = liff.getContext();
     if (!ctx || (ctx.type !== 'group' && ctx.type !== 'room' && ctx.type !== 'utou')) return;
     var total = items.reduce(function (a, it) { return a + it.qty; }, 0);
-    var lines = ['【注文フォーム】ご注文を送信しました', '（' + items.length + '品目・計' + total + '箱／' + shipping + '）'];
-    liff.sendMessages([{ type: 'text', text: lines.join('\n') }]).catch(function (e) { console.warn(e); });
+    var lines = ['【注文フォーム】ご注文を送信しました'];
+    if (receivedAt) lines.push('受付：' + receivedAt);
+    lines.push('（' + items.length + '品目・計' + total + '箱／' + shipping + '）');
+    state.chatSending = liff.sendMessages([{ type: 'text', text: lines.join('\n') }])
+      .catch(function (e) { console.warn(e); });
   } catch (e) {
     console.warn(e);
   }
