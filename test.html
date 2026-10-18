@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>IDEAHOUSE 注文フォーム</title>
+<!--
+  IDEAHOUSE LINE 注文フォーム（LIFF）
+  ・這個檔案放在 GitHub Pages，客人在 LINE 群組裡打開。
+  ・這裡沒有任何密碼或金鑰。身分確認、在庫檢查、寫入訂單全部在 Apps Script 那邊進行。
+  ・下面「設定」區塊的 2 個值：LIFF ID、Apps Script 的網址（/exec）。
+-->
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js" charset="utf-8"></script>
+<style>
+  :root {
+    --bg: #f4f5f2;
+    --card: #ffffff;
+    --text: #1f2a24;
+    --muted: #6b756f;
+    --line: #e3e6e1;
+    --accent: #1f7a5a;
+    --accent-dark: #165c43;
+    --accent-soft: #e6f2ec;
+    --warn: #b4442f;
+    --warn-soft: #fbecea;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--accent); color: #fff;
+    padding: 12px 16px;
+  }
+  .topbar .brand { font-weight: 700; letter-spacing: .02em; font-size: 15px; }
+  .topbar .sub { font-size: 12px; opacity: .85; margin-top: 2px; min-height: 18px; }
+  .demo-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; background: #ffd666; color: #5a4300; font-size: 11px; font-weight: 700; vertical-align: 1px; }
+  main { max-width: 640px; margin: 0 auto; padding: 14px 14px 120px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 700; }
+  .greeting { font-size: 14px; color: var(--muted); margin: 2px 2px 10px; }
+  .store-card { display: flex; align-items: flex-start; gap: 10px; }
+  .store-card .label { font-size: 12px; color: var(--muted); }
+  .store-card .store { font-weight: 700; font-size: 16px; }
+  .store-card .company { font-size: 13px; color: var(--muted); }
+  .store-card .addr { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .link-btn { margin-left: auto; flex-shrink: 0; background: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--accent); cursor: pointer; }
+  .search { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 10px; }
+  .item { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; margin-bottom: 8px; }
+  .item.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .item.soldout { opacity: .6; }
+  .thumb { width: 64px; height: 64px; flex-shrink: 0; border-radius: 10px; background: #f0f1ee; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .thumb .noimg { font-size: 10px; color: var(--muted); }
+  .info { flex: 1; min-width: 0; }
+  .code { display: inline-block; font-size: 11px; color: var(--muted); background: #f0f1ee; border-radius: 6px; padding: 0 6px; }
+  .name { font-size: 14px; font-weight: 600; line-height: 1.35; margin-top: 2px; word-break: break-word; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .soldout-label { font-size: 12px; font-weight: 700; color: var(--warn); margin-top: 2px; }
+  .stepper { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .stepper button { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); background: #fff; font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .stepper button.plus { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .stepper button:disabled { opacity: .35; cursor: default; }
+  .stepper input { width: 42px; height: 32px; text-align: center; border: 1px solid var(--line); border-radius: 8px; font-weight: 700; -moz-appearance: textfield; }
+  .stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .unit { font-size: 12px; color: var(--muted); margin-left: 2px; }
+  select, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  textarea { min-height: 84px; resize: vertical; }
+  .note { font-size: 13px; color: var(--accent-dark); background: var(--accent-soft); border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+  .note:empty { display: none; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .banner { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 12px; }
+  .banner:empty { display: none; }
+  .bottom-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: rgba(255,255,255,.97); border-top: 1px solid var(--line);
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    display: none;
+  }
+  .bottom-bar.show { display: block; }
+  .bottom-inner { max-width: 640px; margin: 0 auto; display: flex; align-items: center; gap: 10px; }
+  .summary { flex: 1; font-size: 13px; color: var(--muted); }
+  .summary b { color: var(--text); font-size: 16px; }
+  .btn { border: none; border-radius: 12px; padding: 12px 18px; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary:disabled { background: #b9c7bf; cursor: default; }
+  .btn.ghost { background: #fff; border: 1px solid var(--line); color: var(--text); }
+  .btn.block { width: 100%; }
+  .btn-row { display: flex; gap: 10px; }
+  .btn-row .btn { flex: 1; }
+  .store-option { display: block; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; cursor: pointer; }
+  .store-option .store { font-weight: 700; font-size: 16px; }
+  .store-option .company { font-size: 13px; color: var(--muted); }
+  .title { font-size: 18px; font-weight: 700; margin: 6px 2px 4px; }
+  .lead { font-size: 13px; color: var(--muted); margin: 0 2px 14px; }
+  .confirm-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .confirm-row:last-child { border-bottom: none; }
+  .confirm-row .cname { font-size: 14px; font-weight: 600; }
+  .confirm-row .ccode { font-size: 12px; color: var(--muted); }
+  .confirm-row .cqty { font-weight: 700; white-space: nowrap; color: var(--accent-dark); }
+  .pre { white-space: pre-wrap; word-break: break-word; }
+  .center { text-align: center; }
+  .big-icon { width: 64px; height: 64px; border-radius: 50%; margin: 18px auto 12px; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+  .big-icon.ok { background: var(--accent-soft); color: var(--accent); }
+  .big-icon.ng { background: var(--warn-soft); color: var(--warn); }
+  .spinner { width: 36px; height: 36px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite; margin: 60px auto 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(255,255,255,.8); display: none; align-items: center; justify-content: center; flex-direction: column; }
+  .overlay.show { display: flex; }
+  .overlay .spinner { margin: 0 0 12px; }
+  .empty { text-align: center; color: var(--muted); padding: 24px 0; }
+  footer { text-align: center; font-size: 11px; color: var(--muted); padding: 18px 0 0; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">IDEAHOUSE 注文フォーム<span id="demoTag" class="demo-tag" hidden>デモ表示</span></div>
+  <div class="sub" id="topSub"></div>
+</header>
+
+<main>
+  <!-- 読み込み中 -->
+  <section id="view-loading" class="view active">
+    <div class="spinner"></div>
+    <p class="center" id="loadingText" style="color:var(--muted)">読み込み中…</p>
+  </section>
+
+  <!-- エラー -->
+  <section id="view-error" class="view">
+    <div class="big-icon ng">!</div>
+    <p class="center pre" id="errorText"></p>
+    <div class="btn-row" style="margin-top:18px">
+      <button class="btn ghost" id="errorRetry" hidden>もう一度読み込む</button>
+      <button class="btn primary" id="errorClose">閉じる</button>
+    </div>
+  </section>
+
+  <!-- お届け先の選択 -->
+  <section id="view-store" class="view">
+    <div class="greeting" id="storeGreeting"></div>
+    <div class="title">お届け先を選んでください</div>
+    <p class="lead">このグループには複数のお届け先が登録されています。</p>
+    <div id="storeList"></div>
+  </section>
+
+  <!-- 商品の選択 -->
+  <section id="view-order" class="view">
+    <div class="greeting" id="orderGreeting"></div>
+    <div class="banner" id="orderBanner"></div>
+
+    <div class="card store-card">
+      <div>
+        <div class="label">お届け先</div>
+        <div class="store" id="storeName"></div>
+        <div class="company" id="companyName"></div>
+        <div class="addr" id="storeAddr"></div>
+      </div>
+      <button class="link-btn" id="changeStore" hidden>変更</button>
+    </div>
+
+    <input class="search" id="search" type="search" placeholder="品番・商品名で検索" hidden>
+    <div id="productList"></div>
+
+    <div class="card">
+      <h2>配送方法</h2>
+      <select id="shipping"></select>
+      <div class="note" id="shippingNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>備考（任意）</h2>
+      <textarea id="remarks" maxlength="2000" placeholder="配送に関するご要望など"></textarea>
+    </div>
+  </section>
+
+  <!-- 確認 -->
+  <section id="view-confirm" class="view">
+    <div class="title">ご注文内容の確認</div>
+    <p class="lead">内容をご確認のうえ「注文を確定する」を押してください。</p>
+    <div class="card">
+      <h2>ご注文商品</h2>
+      <div id="confirmItems"></div>
+    </div>
+    <div class="card">
+      <h2>お届け先</h2>
+      <div id="confirmStore" style="font-weight:700"></div>
+      <div id="confirmAddr" class="hint" style="margin-top:2px"></div>
+    </div>
+    <div class="card">
+      <h2>配送方法</h2>
+      <div id="confirmShipping" style="font-weight:700"></div>
+      <div class="note" id="confirmShippingNote"></div>
+    </div>
+    <div class="card">
+      <h2>備考</h2>
+      <div id="confirmRemarks" class="pre"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" id="backToOrder">修正する</button>
+      <button class="btn primary" id="submitOrder">注文を確定する</button>
+    </div>
+  </section>
+
+  <!-- 完了 -->
+  <section id="view-done" class="view">
+    <div class="big-icon ok">✓</div>
+    <div class="title center">ご注文を受け付けました</div>
+    <p class="lead center pre" id="doneText"></p>
+    <div class="card">
+      <h2>ご注文内容</h2>
+      <div id="doneItems"></div>
+    </div>
+    <button class="btn primary block" id="doneClose">閉じる</button>
+  </section>
+
+  <footer>
+    IDEAHOUSE<br>〒111-0036 東京都台東区松が谷4-1-2 第二高総コーポ1階
+  </footer>
+</main>
+
+<div class="bottom-bar" id="cartBar">
+  <div class="bottom-inner">
+    <div class="summary" id="cartSummary">商品を選んでください</div>
+    <button class="btn primary" id="toConfirm" disabled>確認へ</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="spinner"></div>
+  <div id="overlayText" style="color:var(--muted)">送信中…</div>
+</div>
+
+<script>
+// ===================== 設定 =====================
+var CONFIG = {
+  LIFF_ID: '2012068636-aOhJtokE',
+  API_URL: 'https://script.google.com/macros/s/AKfycbxQHn_tqa_MHr_WDMBLG2DsRVzu63E6pOlHQGhJ7kiE7sKKLOqt1ZF1vgpZ4MSfc9cb5A/exec',
+  // 注文後に LINE グループへメッセージを送るか（Bot を対応させてから true にする）
+  SEND_CHAT_MESSAGE: false
+};
+// =================================================
+
+var state = {
+  demo: false,
+  groupToken: '',
+  idToken: '',
+  stores: [],
+  storeKey: '',
+  data: null,
+  qty: {},
+  submitting: false,
+  lastOrder: null
+};
+
+function $(id) { return document.getElementById(id); }
+
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+
+function showView(name) {
+  ['loading', 'error', 'store', 'order', 'confirm', 'done'].forEach(function (v) {
+    $('view-' + v).classList.toggle('active', v === name);
+  });
+  $('cartBar').classList.toggle('show', name === 'order');
+  window.scrollTo(0, 0);
+}
+
+function showLoading(text) {
+  $('loadingText').textContent = text || '読み込み中…';
+  showView('loading');
+}
+
+function showError(message, canRetry) {
+  $('errorText').textContent = message || 'エラーが発生しました。';
+  $('errorRetry').hidden = !canRetry;
+  showView('error');
+}
+
+function overlay(on, text) {
+  $('overlayText').textContent = text || '送信中…';
+  $('overlay').classList.toggle('show', !!on);
+}
+
+function closeForm() {
+  try {
+    if (!state.demo && window.liff && liff.isInClient()) { liff.closeWindow(); return; }
+  } catch (e) {}
+  window.close();
+  $('topSub').textContent = 'このページは閉じていただいて大丈夫です。';
+}
+
+// URL から群組通行證（g）を取り出す（LIFF の liff.state にも対応）
+function readGroupToken() {
+  var params = new URLSearchParams(location.search);
+  var g = params.get('g');
+  if (!g && params.get('liff.state')) {
+    var st = params.get('liff.state');
+    var q = st.indexOf('?') >= 0 ? st.slice(st.indexOf('?') + 1) : st;
+    g = new URLSearchParams(q).get('g');
+  }
+  return g || '';
+}
+
+// ----- サーバー（Apps Script）との通信 -----
+function callApi(body) {
+  if (state.demo) return demoApi(body);
+  body.groupToken = state.groupToken;
+  body.idToken = state.idToken;
+  return fetch(CONFIG.API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body),
+    redirect: 'follow'
+  }).then(function (res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  });
+}
+
+// ----- 起動 -----
+function start() {
+  if (new URLSearchParams(location.search).get('demo') === '1') {
+    state.demo = true;
+    $('demoTag').hidden = false;
+    loadStore('');
+    return;
+  }
+
+  if (!window.liff) {
+    showError('LINE の読み込みに失敗しました。通信環境をご確認のうえ、もう一度開いてください。', false);
+    return;
+  }
+
+  showLoading('LINE と接続しています…');
+  liff.init({ liffId: CONFIG.LIFF_ID }).then(function () {
+    if (!liff.isLoggedIn()) {
+      liff.login({ redirectUri: location.href });
+      return;
+    }
+    state.groupToken = readGroupToken();
+    if (!state.groupToken) {
+      showError('注文フォームのリンクが正しくありません。LINE グループの「注文フォームを開く」ボタンから開いてください。', false);
+      return;
+    }
+    state.idToken = liff.getIDToken() || '';
+    if (!state.idToken) {
+      showError('LINE のログイン情報を取得できませんでした。フォームを閉じて、もう一度開いてください。', false);
+      return;
+    }
+    loadStore('');
+  }).catch(function (err) {
+    console.error(err);
+    showError('LINE との接続に失敗しました。フォームを閉じて、もう一度開いてください。', false);
+  });
+}
+
+function loadStore(storeKey) {
+  showLoading('商品情報を読み込んでいます…');
+  callApi({ action: 'liffLoad', storeKey: storeKey || '' }).then(function (res) {
+    if (!res || !res.ok) {
+      var retry = res && (res.code === 'SERVER_ERROR' || res.code === 'STORE_NOT_FOUND');
+      showError((res && res.message) || 'エラーが発生しました。', retry);
+      return;
+    }
+    if (res.needStore) {
+      state.stores = res.stores || [];
+      renderStoreChoice(res);
+      return;
+    }
+    state.storeKey = storeKey || '';
+    state.data = res;
+    state.qty = {};
+    renderOrder();
+  }).catch(function (err) {
+    console.error(err);
+    showError('通信エラーが発生しました。電波の良いところで、もう一度お試しください。', true);
+  });
+}
+
+// ----- お届け先の選択 -----
+function renderStoreChoice(res) {
+  $('topSub').textContent = '';
+  $('storeGreeting').textContent = res.userName ? res.userName + ' 様' : '';
+  var list = $('storeList');
+  list.innerHTML = '';
+  state.stores.forEach(function (st) {
+    var b = el('button', 'store-option');
+    b.appendChild(el('div', 'store', st.store || st.company));
+    if (st.store) b.appendChild(el('div', 'company', st.company));
+    b.addEventListener('click', function () { loadStore(st.key); });
+    list.appendChild(b);
+  });
+  showView('store');
+}
+
+// ----- 商品の選択 -----
+function stockOf(p) {
+  if (p.stock === '' || p.stock === null || p.stock === undefined) return null; // 管理なし
+  var n = parseInt(p.stock, 10);
+  return isNaN(n) ? null : n;
+}
+
+function maxQtyOf(p) {
+  var s = stockOf(p);
+  if (s === null) return 9999;
+  return Math.max(0, Math.min(9999, s));
+}
+
+function renderOrder() {
+  var d = state.data;
+  $('topSub').textContent = (d.store || d.company) ? (d.store || d.company) + ' 様' : '';
+  $('orderGreeting').textContent = d.userName ? 'ようこそ、' + d.userName + ' 様' : '';
+  $('orderBanner').textContent = '';
+  $('storeName').textContent = d.store || d.company;
+  $('companyName').textContent = d.store ? d.company : '';
+  $('storeAddr').textContent = [d.zipcode ? '〒' + d.zipcode : '', d.address || ''].join(' ').trim();
+  $('changeStore').hidden = !d.multiStore;
+
+  // 配送方法
+  var sel = $('shipping');
+  sel.innerHTML = '';
+  (d.shippingOptions || []).forEach(function (opt) {
+    var o = el('option', null, opt);
+    o.value = opt;
+    sel.appendChild(o);
+  });
+  updateShippingNote();
+
+  $('remarks').value = '';
+  $('search').value = '';
+  $('search').hidden = (d.products || []).length <= 8;
+  renderProducts();
+  updateCart();
+  showView('order');
+}
+
+function renderProducts() {
+  var d = state.data;
+  var list = $('productList');
+  var keyword = $('search').value.trim().toLowerCase();
+  list.innerHTML = '';
+
+  var products = (d.products || []).filter(function (p) {
+    if (!keyword) return true;
+    return (String(p.id) + ' ' + String(p.name)).toLowerCase().indexOf(keyword) >= 0;
+  });
+
+  if ((d.products || []).length === 0) {
+    list.appendChild(el('div', 'empty', '現在ご注文いただける商品がありません。担当者にお問い合わせください。'));
+    return;
+  }
+  if (products.length === 0) {
+    list.appendChild(el('div', 'empty', '該当する商品がありません。'));
+    return;
+  }
+
+  products.forEach(function (p) {
+    var max = maxQtyOf(p);
+    var soldout = max <= 0;
+    var row = el('div', 'item' + (soldout ? ' soldout' : '') + ((state.qty[p.id] || 0) > 0 ? ' selected' : ''));
+
+    var thumb = el('div', 'thumb');
+    if (p.image) {
+      var img = el('img');
+      img.loading = 'lazy';
+      img.alt = '';
+      img.src = p.image;
+      img.addEventListener('error', function () {
+        thumb.innerHTML = '';
+        thumb.appendChild(el('span', 'noimg', '画像なし'));
+      });
+      thumb.appendChild(img);
+    } else {
+      thumb.appendChild(el('span', 'noimg', '画像なし'));
+    }
+    row.appendChild(thumb);
+
+    var info = el('div', 'info');
+    info.appendChild(el('span', 'code', p.id));
+    info.appendChild(el('div', 'name', p.name));
+    var metaParts = [];
+    if (p.pack) metaParts.push(p.pack + (p.unit || '') + '/箱');
+    var s = stockOf(p);
+    if (d.showInventory && s !== null && s > 0) metaParts.push('在庫 ' + s + '箱');
+    if (metaParts.length) info.appendChild(el('div', 'meta', metaParts.join('・')));
+    if (soldout) info.appendChild(el('div', 'soldout-label', '入荷待ち'));
+    row.appendChild(info);
+
+    if (!soldout) {
+      var stepper = el('div', 'stepper');
+      var minus = el('button', 'minus', '−');
+      minus.type = 'button';
+      minus.setAttribute('aria-label', '減らす');
+      var input = el('input');
+      input.type = 'number';
+      input.inputMode = 'numeric';
+      input.min = '0';
+      input.max = String(max);
+      input.value = state.qty[p.id] || 0;
+      var plus = el('button', 'plus', '＋');
+      plus.type = 'button';
+      plus.setAttribute('aria-label', '増やす');
+
+      var sync = function () {
+        var q = state.qty[p.id] || 0;
+        input.value = q;
+        minus.disabled = q <= 0;
+        plus.disabled = q >= max;
+        row.classList.toggle('selected', q > 0);
+        updateCart();
+      };
+      var setQty = function (q) {
+        q = parseInt(q, 10);
+        if (isNaN(q) || q < 0) q = 0;
+        if (q > max) q = max;
+        if (q === 0) delete state.qty[p.id]; else state.qty[p.id] = q;
+        sync();
+      };
+      minus.addEventListener('click', function () { setQty((state.qty[p.id] || 0) - 1); });
+      plus.addEventListener('click', function () { setQty((state.qty[p.id] || 0) + 1); });
+      input.addEventListener('change', function () { setQty(input.value); });
+      input.addEventListener('focus', function () { input.select(); });
+
+      stepper.appendChild(minus);
+      stepper.appendChild(input);
+      stepper.appendChild(plus);
+      stepper.appendChild(el('span', 'unit', '箱'));
+      row.appendChild(stepper);
+      sync();
+    }
+    list.appendChild(row);
+  });
+}
+
+function selectedItems() {
+  var d = state.data;
+  var items = [];
+  (d.products || []).forEach(function (p) {
+    var q = state.qty[p.id] || 0;
+    if (q > 0) items.push({ id: p.id, name: p.name, pack: p.pack, unit: p.unit, qty: q });
+  });
+  return items;
+}
+
+function updateCart() {
+  var items = selectedItems();
+  var total = items.reduce(function (a, it) { return a + it.qty; }, 0);
+  if (items.length === 0) {
+    $('cartSummary').textContent = '商品を選んでください';
+  } else {
+    $('cartSummary').innerHTML = '';
+    $('cartSummary').appendChild(document.createTextNode(items.length + '品目・計 '));
+    $('cartSummary').appendChild(el('b', null, String(total)));
+    $('cartSummary').appendChild(document.createTextNode(' 箱'));
+  }
+  $('toConfirm').disabled = items.length === 0;
+}
+
+function shippingNoteFor(option) {
+  var notes = (state.data && state.data.deliveryNotes) || {};
+  if (option === '都内無料配送' || option === '都內無料配送') return notes.free || '';
+  if (option === '宅配便') return notes.express || '';
+  return '';
+}
+
+function updateShippingNote() {
+  $('shippingNote').textContent = shippingNoteFor($('shipping').value);
+}
+
+// ----- 確認 -----
+function toConfirm() {
+  var items = selectedItems();
+  if (items.length === 0) return;
+  var d = state.data;
+
+  var box = $('confirmItems');
+  box.innerHTML = '';
+  items.forEach(function (it) { box.appendChild(confirmRow(it)); });
+
+  $('confirmStore').textContent = (d.store || d.company) + (d.store ? '（' + d.company + '）' : '');
+  $('confirmAddr').textContent = [d.zipcode ? '〒' + d.zipcode : '', d.address || ''].join(' ').trim();
+  $('confirmShipping').textContent = $('shipping').value;
+  $('confirmShippingNote').textContent = shippingNoteFor($('shipping').value);
+  $('confirmRemarks').textContent = $('remarks').value.trim() || 'なし';
+  showView('confirm');
+}
+
+function confirmRow(it) {
+  var row = el('div', 'confirm-row');
+  var left = el('div');
+  left.appendChild(el('div', 'cname', it.name));
+  left.appendChild(el('div', 'ccode', it.id + (it.pack ? '・' + it.pack + (it.unit || '') + '/箱' : '')));
+  row.appendChild(left);
+  row.appendChild(el('div', 'cqty', it.qty + ' 箱'));
+  return row;
+}
+
+// ----- 送信 -----
+function submitOrder() {
+  if (state.submitting) return;
+  var items = selectedItems();
+  if (items.length === 0) return;
+  state.submitting = true;
+  $('submitOrder').disabled = true;
+  overlay(true, '送信中…');
+
+  var shipping = $('shipping').value;
+  var remarks = $('remarks').value.trim();
+
+  callApi({
+    action: 'liffSubmit',
+    sessionToken: state.data.sessionToken,
+    shipping: shipping,
+    remarks: remarks,
+    items: items.map(function (it) { return { id: it.id, qty: it.qty }; })
+  }).then(function (res) {
+    overlay(false);
+    state.submitting = false;
+    $('submitOrder').disabled = false;
+
+    if (res && res.ok) {
+      state.lastOrder = { items: items, shipping: shipping };
+      renderDone(res);
+      sendChatMessage(items, shipping);
+      return;
+    }
+
+    var code = res && res.code;
+    var msg = (res && res.message) || '注文処理中にエラーが発生しました。';
+    if (code === 'SESSION_EXPIRED' || code === 'ALREADY_SUBMITTED' || code === 'LINK_EXPIRED' || code === 'LINK_INVALID' || code === 'LOGIN_REQUIRED' || code === 'NOT_MEMBER' || code === 'SESSION_MISMATCH') {
+      showError(msg, code === 'SESSION_EXPIRED');
+      return;
+    }
+    // 在庫不足などは、商品選択の画面に戻って修正してもらう
+    $('orderBanner').textContent = msg;
+    showView('order');
+  }).catch(function (err) {
+    console.error(err);
+    overlay(false);
+    state.submitting = false;
+    $('submitOrder').disabled = false;
+    showError('通信エラーが発生しました。\nご注文が登録されたか不明なため、再送信する前に担当者へご確認ください。', false);
+  });
+}
+
+function renderDone(res) {
+  var d = state.data;
+  var text = (d.store || d.company) + ' 様\nご注文ありがとうございました。\n担当者が確認のうえ、手配いたします。';
+  if (res.warning) text += '\n\n' + res.warning;
+  $('doneText').textContent = text;
+  var box = $('doneItems');
+  box.innerHTML = '';
+  state.lastOrder.items.forEach(function (it) { box.appendChild(confirmRow(it)); });
+  showView('done');
+}
+
+// 注文後に LINE グループへお知らせを送る（CONFIG.SEND_CHAT_MESSAGE が true のときだけ）
+function sendChatMessage(items, shipping) {
+  if (state.demo || !CONFIG.SEND_CHAT_MESSAGE) return;
+  try {
+    var ctx = liff.getContext();
+    if (!ctx || (ctx.type !== 'group' && ctx.type !== 'room' && ctx.type !== 'utou')) return;
+    var total = items.reduce(function (a, it) { return a + it.qty; }, 0);
+    var lines = ['【注文フォーム】ご注文を送信しました', '（' + items.length + '品目・計' + total + '箱／' + shipping + '）'];
+    liff.sendMessages([{ type: 'text', text: lines.join('\n') }]).catch(function (e) { console.warn(e); });
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+// ----- デモ（?demo=1 のときだけ。LINE もサーバーも使わない）-----
+function demoApi(body) {
+  var stores = [
+    { key: 'demo1', company: 'デモ株式会社', store: 'デモ 浅草店' },
+    { key: 'demo2', company: 'デモ株式会社', store: 'デモ 渋谷店' }
+  ];
+  var products = [
+    { id: 'CA08226', name: '8oz DD紙コップ 口径90mm', image: '', pack: '500', unit: '個', stock: '' },
+    { id: 'CA03002', name: '3oz 試飲用紙コップ 口径55mm', image: '', pack: '4,000', unit: '個', stock: 5 },
+    { id: 'CA16072', name: '16oz 紙コップ 口径90mm', image: '', pack: '1,000', unit: '個', stock: 0 },
+    { id: 'RI90004', name: 'PPフラットリッド(ストロー穴あり) 口径90mm', image: '', pack: '1,000', unit: '個', stock: '' }
+  ];
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      if (body.action === 'liffLoad' && !body.storeKey) {
+        resolve({ ok: true, needStore: true, userName: 'デモ太郎', stores: stores });
+      } else if (body.action === 'liffLoad') {
+        var st = stores.filter(function (s) { return s.key === body.storeKey; })[0] || stores[0];
+        resolve({
+          ok: true, needStore: false, multiStore: true, sessionToken: 'demo', userName: 'デモ太郎',
+          company: st.company, store: st.store, zipcode: '111-0036', address: '東京都台東区（デモ住所）',
+          shippingOptions: ['都内無料配送', '宅配便'],
+          deliveryNotes: { free: '※（デモ）次回の配送日にお届けいたします。', express: '※（デモ）本日に発送いたします。' },
+          showInventory: true, products: products
+        });
+      } else {
+        resolve({ ok: true, warning: '' });
+      }
+    }, 500);
+  });
+}
+
+// ----- ボタンなど -----
+$('errorClose').addEventListener('click', closeForm);
+$('doneClose').addEventListener('click', closeForm);
+$('errorRetry').addEventListener('click', function () { loadStore(state.storeKey); });
+$('changeStore').addEventListener('click', function () { loadStore(''); });
+$('shipping').addEventListener('change', updateShippingNote);
+$('search').addEventListener('input', renderProducts);
+$('toConfirm').addEventListener('click', toConfirm);
+$('backToOrder').addEventListener('click', function () { showView('order'); });
+$('submitOrder').addEventListener('click', submitOrder);
+
+start();
+</script>
+</body>
+</html>
